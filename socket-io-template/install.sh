@@ -7,10 +7,10 @@ read PROJECT_NAME
 
 if [ ! -d $PROJECT_NAME ]; then
     echo "###### CREATING PROJECT '$PROJECT_NAME' BOILERPLATE ######"
-    echo "Server side :: handling main folders and files"
+    echo "SERVER SIDE :: handling main folders and files"
 
     mkdir server; cd server
-
+    
     echo "<<< Creating Main app.py (server side application) >>>"
     cat > app.py <<EOF
 from aiohttp import web
@@ -26,10 +26,8 @@ all_messages = []
 
 @io.event
 async def connect(sid, environ):
-    global socket_status
-
     print(f"[io.on('connect') - new socket [{sid}]")
-
+    print("Sending session id to user...")
     await io.emit('whoAmI', sid, room=sid)
 
 
@@ -63,8 +61,11 @@ EOF
     pipenv install pylint autopep8 aiohttp python-socketio
 
     cd ..
-    echo "Client side :: handling main folders and files"
+    echo "CLIENT SIDE :: handling main folders and files"
     mkdir client; cd client
+    mkdir src; cd src
+    mkdir styles; mkdir main
+
     echo "<<< Creating index.html (client side boilerplate html5) >>>"
     cat > index.html <<EOF
 <!DOCTYPE html>
@@ -74,7 +75,6 @@ EOF
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Simple Messager</title>
-    <link rel="stylesheet" href="index.css">
 </head>
 
 <body>
@@ -91,14 +91,18 @@ EOF
         </div>
     </div>
 
-    <script src="index.js"></script>
 </body>
 
 </html>
 EOF
 
-    echo "<<< Creating Javascript file (socketio client handler) >>>"
+    echo "<<< Creating Index Javascript file (socketio client handler) >>>"
     cat > index.js <<EOF
+import './main/message'
+import './styles/main.scss'
+EOF
+    cd main
+    cat > message.js <<EOF
 const io = require('socket.io-client')
 const socket = io("http://localhost:5000/")
 
@@ -128,7 +132,7 @@ socket.on("connect", () => {
 
     button.addEventListener("click", e => {
         e.preventDefault()
-        if (roomState.currentMessage != "") {
+        if (roomState.currentMessage.trim() != "") {
             socket.emit("sendMessage", roomState.currentMessage)
         }
     })
@@ -136,11 +140,13 @@ socket.on("connect", () => {
 
     socket.on("roomData", message => {
         // creating message template:
-
         // Later, you should implement a better variable to 
         // handle identification!
-        const id = message.id
-        const msgContent = message.message
+        const parsedMessage = JSON.parse(message)
+        console.debug(parsedMessage)
+
+        const id = parsedMessage.id
+        const msgContent = parsedMessage.message
 
         const msgContainer = document.createElement('div')
         msgContainer.classList.add('message-container')
@@ -163,35 +169,14 @@ socket.on("connect", () => {
 
         display.appendChild(msgContainer)
 
+        display.scrollTop = display.scrollHeight
     })
-
 })
 EOF
-
-    echo "<<< Creating package.json file >>>"
-    cat > package.json <<EOF
-{
-"name": "simple-socket-io-messanger",
-"version": "0.0.1",
-"description": "",
-"main": "index.js",
-"scripts": {
-    "start": "http-server -c-1 -p8080"
-},
-"keywords": [],
-"author": "",
-"license": "ISC",
-"dependencies": {
-    "socket.io-client": "^2.3.0"
-},
-"devDependencies": {
-    "http-server": "^0.12.3"
-}
-}
-EOF
-    npm install
-    echo "<<< Creating index.css (main stylesheet ---> consider using SCSS in the future!) >>>"
-    cat > index.css <<EOF
+    cd ..
+    cd styles
+    echo "<<< Creating index.scss (main stylesheet)>>>"
+    cat > main.scss <<EOF
 @import url("https://fonts.googleapis.com/css2?family=Oswald:wght@200;400;500;600;700&display=swap");
 
 :root {
@@ -249,6 +234,7 @@ header.header {
     flex-direction: column;
     justify-content: flex-start;
     align-items: flex-end;
+    overflow-y: auto;
 }
 
 .messanger-container .messages-display .message-container {
@@ -333,10 +319,109 @@ header.header {
 }
 EOF
 
-    cd ..
+    cd ../..
+    echo "<<< Creating package.json file >>>"
+    cat > package.json <<EOF
+{
+  "name": "frontend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "webpack",
+    "dev": "webpack-dev-server"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "socket.io-client": "^2.3.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.11.6",
+    "@babel/plugin-proposal-class-properties": "^7.10.4",
+    "@babel/preset-env": "^7.11.5",
+    "babel-loader": "^8.1.0",
+    "css-loader": "^4.3.0",
+    "file-loader": "^6.1.1",
+    "html-loader": "^0.5.5",
+    "html-webpack-plugin": "^3.2.0",
+    "mini-css-extract-plugin": "^1.0.0",
+    "node-sass": "^4.14.1",
+    "sass-loader": "^10.0.3",
+    "style-loader": "^2.0.0",
+    "webpack": "^4.29.6",
+    "webpack-cli": "^3.2.3",
+    "webpack-dev-server": "^3.11.0"
+  }
+}
+EOF
     
+    echo "<<< Creating webpack.config.js (builder) >>>"
+    cat > webpack.config.js <<EOF
+const HtmlWebPackPlugin = require("html-webpack-plugin")
+const MiniCssExtractPlugin = require("mini-css-extract-plugin")
+
+module.exports = {
+    mode: "development",
+    module: {
+        rules: [
+            {
+                test: /\.js$/,
+                exclude: /node_modules/,
+                use: {
+                    loader: "babel-loader",
+                    options: {
+                        plugins: ['@babel/plugin-proposal-class-properties']
+                    }
+                }
+            },
+            {
+                test: /\.html$/,
+                use: [
+                    {
+                        loader: "html-loader",
+                        options: { minimize: true }
+                    }
+                ]
+            },
+            {
+                test: /\.(png|svg|jpg|gif)$/,
+                use: [
+                    "file-loader"
+                ]
+            },
+            {
+                test: /\.scss$/,
+                use: [
+                    "style-loader",
+                    "css-loader",
+                    "sass-loader"
+                ]
+            }
+        ]
+    },
+    plugins: [
+        new HtmlWebPackPlugin({
+            template: "./src/index.html",
+            filename: "./index.html",
+            chunks: ['main']
+
+        }),
+        new MiniCssExtractPlugin({
+            filename: "[name].css",
+            chunkFilename: "[id].css"
+        })
+    ]
+}
+EOF
+    npm install
+    npm run build 
+    cd ..
+
     echo "<<< Starting git local repository >>>"
     git init
+    echo "Project $PROJECT_NAME created =)"
 else
     { echo >&2 "Project alread exists, aborting now..."; exit 1; }
 fi
